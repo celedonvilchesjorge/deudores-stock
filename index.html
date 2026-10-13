@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Deudores y Stock</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--text:#1c1e21;--muted:#6b7280;--accent:#2563eb;--accent2:#dc2626;--accent3:#16a34a;--border:#e5e7eb;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111317;--card:#1c1f26;--text:#eef1f5;--muted:#9aa3af;--border:#2b2f38}}
+:root[data-theme="dark"]{--bg:#111317;--card:#1c1f26;--text:#eef1f5;--muted:#9aa3af;--border:#2b2f38}
+*{box-sizing:border-box}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:env(safe-area-inset-top,0px);background:var(--accent);color:#fff;padding:14px 16px;font-weight:700;font-size:1.1rem;display:flex;justify-content:space-between;align-items:center;z-index:5;gap:8px}
+.tabs{display:flex;gap:6px;padding:8px;background:var(--card);border-bottom:1px solid var(--border)}
+.tab{flex:1;text-align:center;font-size:.85rem;padding:10px 2px;border-radius:10px;font-weight:600;cursor:pointer;color:var(--muted)}
+.tab.active{background:var(--accent);color:#fff}
+main{padding:12px;max-width:600px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.row:first-child{margin-top:0}
+input,select{flex:1;min-width:100px;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:1rem}
+button{padding:10px 14px;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:.95rem}
+.btn-primary{background:var(--accent);color:#fff}.btn-green{background:var(--accent3);color:#fff}.btn-red{background:var(--accent2);color:#fff}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:8px;flex-wrap:wrap}
+.item:last-child{border-bottom:none}
+.name{font-weight:600}.sub{font-size:.8rem;color:var(--muted)}.amount{font-weight:700}
+.debt{color:var(--accent2)}.ok{color:var(--accent3)}
+.total-bar{display:flex;justify-content:space-between;font-weight:700;font-size:1.05rem;padding:12px;background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:10px}
+.actions{display:flex;gap:6px}.actions button{padding:6px 10px;font-size:.85rem}
+.hidden{display:none}.empty{color:var(--muted);text-align:center;padding:20px;font-size:.9rem}
+#banner{background:#fef3c7;color:#92400e;padding:10px 14px;font-size:.9rem;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <span id="pageTitle">Nueva venta</span>
+  <span style="display:flex;gap:6px">
+    <button class="btn-ghost" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="cambiarNombre()" id="btnNombre">Yo: ?</button>
+    <button class="btn-ghost" style="color:#fff;border-color:rgba(255,255,255,.5)" onclick="exportExcel()">Excel</button>
+  </span>
+</header>
+<div id="banner" class="hidden"></div>
+<div class="tabs">
+  <div class="tab active" id="tabVenta" onclick="showTab('venta')">🧾 Venta</div>
+  <div class="tab" id="tabDeudores" onclick="showTab('deudores')">👥 Deudores</div>
+  <div class="tab" id="tabStock" onclick="showTab('stock')">📦 Stock</div>
+  <div class="tab" id="tabResumen" onclick="showTab('resumen')">💰 Resumen</div>
+</div>
+<main>
+  <section id="viewVenta">
+    <div class="card">
+      <div class="row"><select id="vProducto" onchange="onProd('v')"></select></div>
+      <div class="row">
+        <input id="vCantidad" type="number" placeholder="Cantidad" oninput="calc('v')">
+        <input id="vPrecio" type="number" placeholder="Precio unit." oninput="calc('v')">
+      </div>
+      <div class="row"><input id="vTotal" type="number" placeholder="Total $"></div>
+      <div class="row"><label style="display:flex;align-items:center;gap:6px;flex:1"><input type="checkbox" id="vFiado" style="flex:none;width:auto" onchange="toggleFiado()"> ¿Es fiado (queda debiendo)?</label></div>
+      <div class="row hidden" id="filaCliente"><input id="vCliente" placeholder="Nombre del cliente" list="listaClientes"><datalist id="listaClientes"></datalist></div>
+      <div class="row"><button class="btn-primary" onclick="registrarVenta()">Registrar venta</button></div>
+      <div class="sub" id="vStockInfo" style="margin-top:6px"></div>
+    </div>
+    <div class="card"><div class="sub" style="margin-bottom:6px;font-weight:600">Últimas ventas</div><div id="listaVentas"></div></div>
+  </section>
+
+  <section id="viewDeudores" class="hidden">
+    <div class="card">
+      <div class="sub" style="margin-bottom:6px;font-weight:600">Agregar deuda (si eliges producto, se descuenta del stock)</div>
+      <div class="row"><input id="dNombre" placeholder="Nombre del deudor" list="listaClientes"></div>
+      <div class="row"><select id="dProducto" onchange="onProd('d')"></select></div>
+      <div class="row">
+        <input id="dCantidad" type="number" placeholder="Cantidad" oninput="calc('d')">
+        <input id="dPrecio" type="number" placeholder="Precio unit." oninput="calc('d')">
+      </div>
+      <div class="row"><input id="dMonto" type="number" placeholder="Monto $"></div>
+      <div class="row"><button class="btn-primary" onclick="agregarDeuda()">+ Agregar deuda</button></div>
+      <div class="sub" id="dStockInfo" style="margin-top:6px"></div>
+    </div>
+    <div class="total-bar"><span>Total adeudado</span><span id="totalDeuda" class="debt">$0</span></div>
+    <div class="card" id="listaDeudores"></div>
+  </section>
+
+  <section id="viewStock" class="hidden">
+    <div class="card">
+      <div class="row">
+        <input id="pNombre" placeholder="Nombre del producto">
+        <input id="pStock" type="number" placeholder="Cantidad comprada"><input id="pCosto" type="number" placeholder="Costo TOTAL de la compra $">
+        <input id="pPrecio" type="number" placeholder="Precio de venta unit.">
+      </div>
+      <div class="row"><button class="btn-primary" onclick="agregarProducto()">+ Agregar producto</button></div>
+    </div>
+    <div class="card" id="listaProductos"></div>
+  </section>
+
+  <section id="viewResumen" class="hidden">
+    <div class="card" id="resPeriodo"></div>
+    <div class="card" id="resAcum"></div>
+    <div class="card"><div class="sub" style="font-weight:600;margin-bottom:6px">Por producto (período actual)</div><div id="resProd"></div></div>
+    <div class="card"><div class="sub" style="font-weight:600;margin-bottom:6px">Pagos de deudores (período actual)</div><div id="resPagos"></div></div>
+    <div class="card"><div class="sub" style="font-weight:600;margin-bottom:6px">Cierres de caja anteriores</div><div id="resCierres"></div></div>
+    <div class="card">
+      <div class="sub" style="font-weight:600;margin-bottom:8px">Respaldo</div>
+      <div class="row">
+        <button class="btn-ghost" onclick="respaldo()">⬇ Descargar respaldo</button>
+        <label class="btn-ghost" style="padding:10px 14px;border-radius:8px;cursor:pointer">⬆ Importar respaldo<input type="file" accept="application/json" onchange="importarRespaldo(event)" hidden></label>
+      </div>
+    </div>
+    <div class="card"><div class="sub" style="margin-bottom:8px">Borra ventas, productos, deudas y cierres para empezar desde cero. Descarga un respaldo antes.</div><button class="btn-red" onclick="borrarTodo()">🗑 Eliminar todo el registro</button></div>
+  </section>
+</main>
+
+<script>
+/* ===== CONFIGURACIÓN DE FIREBASE (proyecto-1-60971) ===== */
+const FIREBASE_CONFIG={
+  apiKey:"AIzaSyAZLiTK9gz8xiYBMSMm-McRlKfPD8CCYt0",
+  authDomain:"proyecto-1-60971.firebaseapp.com",
+  projectId:"proyecto-1-60971",
+  storageBucket:"proyecto-1-60971.firebasestorage.app",
+  messagingSenderId:"752869490149",
+  appId:"1:752869490149:web:563d9d6209336fa44fc30c"
+};
+
+let db=null, unsubs=[], productos=[], movs=[], cierres=[], miNombre='';
+const $=id=>document.getElementById(id);
+const fTs=t=>new Date(t).toLocaleString('es-CL',{timeZone:'America/Santiago',dateStyle:'short',timeStyle:'short'});
+const fmt=n=>'$'+Math.round(n).toLocaleString('es-CL');
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---- Nombre de quien registra (sin login; se guarda en el celular) ---- */
+function cargarNombre(){
+  try{miNombre=localStorage.getItem('miNombre')||''}catch(e){}
+  if(!miNombre)pedirNombre();
+  $('btnNombre').textContent='Yo: '+(miNombre||'?');
+}
+function pedirNombre(){
+  const n=(prompt('¿Cómo te llamas? (se usa para saber quién registró cada venta)',miNombre)||'').trim();
+  if(n){miNombre=n;try{localStorage.setItem('miNombre',n)}catch(e){}}
+  $('btnNombre').textContent='Yo: '+(miNombre||'?');
+}
+function cambiarNombre(){pedirNombre()}
+
+/* ---- Modelo: cada movimiento es un documento propio ----
+   tipo: entrada | venta | deuda | pago
+   Stock = entradas - ventas. Deuda = ventas fiadas + deudas - pagos. */
+function stockDe(pid){return movs.reduce((s,m)=>m.productoId!==pid?s:m.tipo==='entrada'?s+m.cant:m.tipo==='venta'?s-m.cant:s,0)}
+function deudores(){
+  const map={};
+  movs.forEach(m=>{
+    if(!m.cliente) return;
+    const isDebt=(m.tipo==='venta'&&m.fiado)||m.tipo==='deuda', isPay=m.tipo==='pago';
+    if(!isDebt&&!isPay) return;
+    const k=m.cliente.toLowerCase();
+    const d=map[k]||(map[k]={nombre:m.cliente,deuda:0});
+    d.deuda+=isDebt?m.total:-m.total;
+  });
+  return Object.values(map).sort((a,b)=>b.deuda-a.deuda||a.nombre.localeCompare(b.nombre));
+}
+async function addMov(m){
+  if(!db){alert('Sin conexión a la base');return false}
+  try{await db.collection('movs').add({...m,por:miNombre||'',ts:Date.now(),fecha:fTs(Date.now())});return true}
+  catch(e){alert('No se pudo guardar: '+(e&&e.message||e));return false}
+}
+function descargar(nombre,blob){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=nombre;
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);
+}
+
+/* ---- Escucha en tiempo real ---- */
+function errSnap(e){$('banner').textContent='Error de conexión con la base: '+(e&&e.message||e);$('banner').classList.remove('hidden')}
+function startListeners(){
+  unsubs.push(db.collection('productos').onSnapshot(s=>{productos=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.nombre.localeCompare(b.nombre));renderAll()},errSnap));
+  unsubs.push(db.collection('cierres').onSnapshot(s=>{cierres=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.hasta-a.hasta);renderAll()},errSnap));
+  unsubs.push(db.collection('movs').onSnapshot(s=>{movs=s.docs.map(d=>({id:d.id,...d.data()}));renderAll()},errSnap));
+}
+
+function showTab(t){
+  ['venta','deudores','stock','resumen'].forEach(x=>{
+    $('view'+x[0].toUpperCase()+x.slice(1)).classList.toggle('hidden',t!==x);
+    $('tab'+x[0].toUpperCase()+x.slice(1)).classList.toggle('active',t===x);
+  });
+  $('pageTitle').textContent=t==='venta'?'Nueva venta':t==='deudores'?'Deudores':t==='resumen'?'Resumen de caja':'Control de Stock';
+}
+
+/* ---- selects y formularios ---- */
+function poblarSelects(){
+  const opts=productos.map(p=>`<option value="${p.id}">${esc(p.nombre)} (stock: ${stockDe(p.id)})</option>`).join('');
+  const v=$('vProducto').value, d=$('dProducto').value;
+  $('vProducto').innerHTML=opts||'<option value="">-- Agrega productos en la pestaña Stock --</option>';
+  $('dProducto').innerHTML='<option value="">— Solo monto (sin producto) —</option>'+opts;
+  if(v)$('vProducto').value=v; if(d)$('dProducto').value=d;
+  onProd('v',true); onProd('d',true);
+  $('listaClientes').innerHTML=[...new Set(movs.map(m=>m.cliente).filter(Boolean))].sort().map(n=>`<option value="${esc(n)}">`).join('');
+}
+function onProd(pre,keep){
+  const p=productos.find(x=>x.id===$(pre+'Producto').value);
+  $(pre+'StockInfo').textContent=p?'Stock disponible: '+stockDe(p.id):'';
+  if(p&&p.precio&&!keep)$(pre+'Precio').value=p.precio;
+  if(!keep)calc(pre);
+}
+function calc(pre){
+  const c=parseFloat($(pre+'Cantidad').value)||0,pr=parseFloat($(pre+'Precio').value)||0;
+  if(c&&pr)$(pre==='v'?'vTotal':'dMonto').value=c*pr;
+}
+function toggleFiado(){$('filaCliente').classList.toggle('hidden',!$('vFiado').checked)}
+function checkStock(p,cant){return cant<=stockDe(p.id)||confirm('El stock de '+p.nombre+' quedará negativo ('+(stockDe(p.id)-cant)+'). ¿Continuar?')}
+
+/* ---- VENTA ---- */
+async function registrarVenta(){
+  const p=productos.find(x=>x.id===$('vProducto').value);
+  const cant=parseFloat($('vCantidad').value), total=parseFloat($('vTotal').value);
+  const fiado=$('vFiado').checked, cliente=$('vCliente').value.trim();
+  if(!p)return alert('Selecciona un producto');
+  if(isNaN(cant)||cant<=0)return alert('Ingresa una cantidad válida');
+  if(fiado&&!cliente)return alert('Ingresa el nombre del cliente para el fiado');
+  if(isNaN(total))return alert('Ingresa el total de la venta');
+  if(!checkStock(p,cant))return;
+  if(await addMov({tipo:'venta',productoId:p.id,producto:p.nombre,cant,total,fiado,cliente:fiado?cliente:''})){
+    ['vCantidad','vPrecio','vTotal','vCliente'].forEach(i=>$(i).value='');
+    $('vFiado').checked=false; toggleFiado();
+  }
+}
+function renderVentas(){
+  const v=movs.filter(m=>m.tipo==='venta'&&m.ts>T0()).sort((a,b)=>b.ts-a.ts).slice(0,30);
+  $('listaVentas').innerHTML=v.length?v.map(m=>`<div class="item"><div><div class="name">${esc(m.producto)} x${m.cant}</div>
+    <div class="sub">${esc(m.fecha||'')}${m.fiado?' · Fiado a '+esc(m.cliente):' · Pagado'}${m.por?' · '+esc(m.por):''}</div></div>
+    <div class="amount">${fmt(m.total)}</div></div>`).join(''):'<div class="empty">Sin ventas en el período actual</div>';
+}
+
+/* ---- DEUDORES ---- */
+async function agregarDeuda(){
+  const nombre=$('dNombre').value.trim(), monto=parseFloat($('dMonto').value);
+  const p=productos.find(x=>x.id===$('dProducto').value), cant=parseFloat($('dCantidad').value);
+  if(!nombre||isNaN(monto)||monto<=0)return alert('Ingresa nombre y monto válido');
+  let ok;
+  if(p){
+    if(isNaN(cant)||cant<=0)return alert('Ingresa la cantidad de '+p.nombre);
+    if(!checkStock(p,cant))return;
+    ok=await addMov({tipo:'venta',productoId:p.id,producto:p.nombre,cant,total:monto,fiado:true,cliente:nombre});
+  }else ok=await addMov({tipo:'deuda',total:monto,cliente:nombre});
+  if(ok)['dNombre','dCantidad','dPrecio','dMonto'].forEach(i=>$(i).value='');
+}
+async function abonar(nombre){
+  const m=parseFloat(prompt('Monto del abono/pago de '+nombre+':'));
+  const d=deudores().find(x=>x.nombre.toLowerCase()===nombre.toLowerCase());
+  if(isNaN(m)||m<=0)return;
+  if(d&&m>d.deuda+0.5)return alert('El abono supera la deuda ('+fmt(d.deuda)+')');
+  await addMov({tipo:'pago',total:m,cliente:nombre});
+}
+function sumarDeuda(nombre){
+  $('dNombre').value=nombre; showTab('deudores'); $('dNombre').scrollIntoView({behavior:'smooth',block:'center'});
+}
+async function saldar(nombre,deuda){
+  if(deuda>0&&confirm('¿Dar por saldada la deuda de '+nombre+' ('+fmt(deuda)+')?'))await addMov({tipo:'pago',total:deuda,cliente:nombre,nota:'saldada'});
+}
+function renderDeudores(){
+  const ds=deudores().filter(d=>d.deuda>0.5);
+  $('listaDeudores').innerHTML=ds.length?ds.map(d=>`<div class="item"><div><div class="name">${esc(d.nombre)}</div>
+    <div class="amount ${d.deuda>0?'debt':'ok'}">${d.deuda>0?fmt(d.deuda):'Al día'}</div></div>
+    <div class="actions"><button class="btn-green" data-a="p" data-n="${esc(d.nombre)}">Pago</button>
+    <button class="btn-red" data-a="s" data-n="${esc(d.nombre)}">+Deuda</button>
+    <button class="btn-ghost" data-a="x" data-n="${esc(d.nombre)}" data-d="${d.deuda}">✔ Pagó todo</button></div></div>`).join(''):'<div class="empty">Nadie les debe por ahora</div>';
+  $('totalDeuda').textContent=fmt(ds.reduce((s,d)=>s+Math.max(0,d.deuda),0));
+}
+$('listaDeudores').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const n=b.dataset.n;
+  if(b.dataset.a==='p')abonar(n);else if(b.dataset.a==='s')sumarDeuda(n);else saldar(n,parseFloat(b.dataset.d));
+});
+
+/* ---- STOCK ---- */
+async function agregarProducto(){
+  const nombre=$('pNombre').value.trim(), stock=parseFloat($('pStock').value), precio=parseFloat($('pPrecio').value)||0, costo=parseFloat($('pCosto').value)||0;
+  if(!nombre||isNaN(stock)||stock<0)return alert('Ingresa nombre y stock válido');
+  if(stock>0&&!costo&&!confirm('No ingresaron el costo total de la compra: la ganancia saldrá sobrestimada. ¿Continuar?'))return;
+  if(!db)return alert('Sin conexión a la base');
+  try{
+    let p=productos.find(x=>x.nombre.toLowerCase()===nombre.toLowerCase()), id;
+    if(p){
+      id=p.id;
+      if(precio)await db.doc('productos/'+id).update({precio});
+    }
+    else{const r=await db.collection('productos').add({nombre,precio});id=r.id}
+    if(stock>0)await addMov({tipo:'entrada',productoId:id,producto:nombre,cant:stock,costoTotal:costo});
+    ['pNombre','pStock','pCosto','pPrecio'].forEach(i=>$(i).value='');
+  }catch(e){alert('No se pudo guardar: '+(e&&e.message||e))}
+}
+async function entrada(id){
+  const p=productos.find(x=>x.id===id), c=parseFloat(prompt('Cantidad que llegó de '+p.nombre+':'));
+  if(isNaN(c)||c<=0)return;
+  const t=parseFloat(prompt('Costo TOTAL pagado por esas '+c+' unidades ($):'));
+  if(isNaN(t)||t<0)return alert('Ingresa el costo total para registrar la inversión');
+  await addMov({tipo:'entrada',productoId:id,producto:p.nombre,cant:c,costoTotal:t});
+}
+async function ventaRapida(id){
+  const p=productos.find(x=>x.id===id), c=parseFloat(prompt('Cantidad vendida de '+p.nombre+':'));
+  if(isNaN(c)||c<=0||!checkStock(p,c))return;
+  await addMov({tipo:'venta',productoId:id,producto:p.nombre,cant:c,total:c*(p.precio||0),fiado:false,cliente:''});
+}
+async function eliminarProducto(id){
+  if(!confirm('¿Eliminar este producto? Sus movimientos quedan en el historial.'))return;
+  try{await db.doc('productos/'+id).delete()}catch(e){alert('No se pudo eliminar')}
+}
+function renderProductos(){
+  $('listaProductos').innerHTML=productos.length?productos.map(p=>{const s=stockDe(p.id),cu=costoUnit(p.id),inv=invertido(p.id);return `<div class="item"><div>
+    <div class="name">${esc(p.nombre)}</div><div class="amount ${s<=0?'debt':'ok'}">Stock: ${s}</div>
+    <div class="sub">Invertido: ${fmt(inv)} · Costo unit.: ${fmt(cu)}</div><div class="sub">${p.precio?`Venta: ${fmt(p.precio)} · Ganancia/unidad: <b class="${p.precio-cu>=0?'ok':'debt'}">${fmt(p.precio-cu)}</b>`:'Sin precio de venta'}</div></div>
+    <div class="actions"><button class="btn-red" data-a="v" data-id="${p.id}">Venta</button>
+    <button class="btn-green" data-a="e" data-id="${p.id}">+ Entrada</button>
+    <button class="btn-ghost" data-a="x" data-id="${p.id}">🗑</button></div></div>`}).join(''):'<div class="empty">Sin productos registrados</div>';
+}
+$('listaProductos').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const id=b.dataset.id;
+  if(b.dataset.a==='v')ventaRapida(id);else if(b.dataset.a==='e')entrada(id);else eliminarProducto(id);
+});
+
+/* ---- EXCEL ---- */
+async function exportExcel(){
+  try{
+    const wb=XLSX.utils.book_new(), ds=deudores();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet([...ds.map(d=>({Nombre:d.nombre,Deuda:d.deuda})),{Nombre:'TOTAL',Deuda:ds.reduce((s,d)=>s+Math.max(0,d.deuda),0)}]),'Deudores');
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(productos.map(p=>({Producto:p.nombre,Stock:stockDe(p.id),Precio:p.precio||''}))),'Stock');
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(movs.filter(m=>m.tipo==='venta').sort((a,b)=>b.ts-a.ts).map(m=>({Fecha:m.fecha,Producto:m.producto,Cantidad:m.cant,Total:m.total,Tipo:m.fiado?'Fiado - '+m.cliente:'Pagado',Vendedor:m.por||''}))),'Ventas');
+    const r=calcResumen();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet([['Inversión total',r.inv],['Total ingresado',r.ingresado],['En cuenta (ingresado - inversión)',r.ingresado-r.inv],['Te deben',porCobrarTotal()],['Ganancia de lo vendido',r.ganancia]].map(([Concepto,Monto])=>({Concepto,Monto}))),'Resumen');
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(cierres.map(c=>({Cierre:c.nombre,Desde:c.desdeTxt,Hasta:c.hastaTxt,Compras:c.inv,Ventas:c.vend,Ingresado:c.ingresado,'Costo vendido':c.costoV,Ganancia:c.ganancia,'Les debían':c.porCobrar,'En cuenta':c.enCuenta}))),'Cierres');
+    descargar('deudores_y_stock.xlsx',new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})]));
+  }catch(e){alert('No se pudo exportar: '+(e&&e.message||e))}
+}
+
+/* ---- RESPALDO (JSON) ---- */
+function respaldo(){
+  const data={exportado:new Date().toISOString(),productos,movs,cierres};
+  descargar('respaldo_'+new Date().toISOString().slice(0,10)+'.json',new Blob([JSON.stringify(data)],{type:'application/json'}));
+}
+async function importarRespaldo(ev){
+  const f=ev.target.files[0]; ev.target.value='';
+  if(!f)return;
+  if(!confirm('Esto AGREGA los datos del respaldo a los que ya existen. ¿Continuar?'))return;
+  try{
+    const d=JSON.parse(await f.text()), map={};
+    for(const p of d.productos||[]){const r=await db.collection('productos').add({nombre:p.nombre,precio:p.precio||0});map[p.id]=r.id}
+    for(const m of d.movs||[]){const {id,...rest}=m;await db.collection('movs').add({...rest,productoId:map[m.productoId]||m.productoId})}
+    for(const c of d.cierres||[]){const {id,...rest}=c;await db.collection('cierres').add(rest)}
+    alert('Respaldo importado.');
+  }catch(e){alert('No se pudo importar: '+(e&&e.message||e))}
+}
+
+/* ---- RESUMEN ---- */
+function invertido(pid){return movs.reduce((s,m)=>s+(m.tipo==='entrada'&&m.productoId===pid?m.costoTotal||0:0),0)}
+function costoUnit(pid){const c=movs.reduce((s,m)=>s+(m.tipo==='entrada'&&m.productoId===pid?m.cant:0),0);return c?invertido(pid)/c:0}
+const T0=()=>Math.max(0,...cierres.map(c=>c.hasta));
+function calcResumen(d=0,h=Infinity){
+  const cu={};productos.forEach(p=>cu[p.id]=costoUnit(p.id));
+  let inv=0,vend=0,costoV=0,ventasPag=0,pagos=0,n=0;const porP={};
+  movs.forEach(m=>{
+    if(!(m.ts>d&&m.ts<=h))return;
+    const x=porP[m.productoId]||(porP[m.productoId]={inv:0,vend:0,costo:0});
+    if(m.tipo==='entrada'){inv+=m.costoTotal||0;x.inv+=m.costoTotal||0}
+    else if(m.tipo==='venta'){const c=m.cant*(cu[m.productoId]||0);n++;vend+=m.total;costoV+=c;x.vend+=m.total;x.costo+=c;if(!m.fiado)ventasPag+=m.total}
+    else if(m.tipo==='pago')pagos+=m.total;
+  });
+  return{inv,vend,costoV,ventasPag,pagos,ingresado:ventasPag+pagos,ganancia:vend-costoV,ventas:n,porP};
+}
+const porCobrarTotal=()=>deudores().reduce((s,x)=>s+Math.max(0,x.deuda),0);
+function renderResumen(){
+  const d=T0(),r=calcResumen(d),t=calcResumen(),pc=porCobrarTotal(),cta=t.ingresado-t.inv;
+  const row=(a,b,c)=>`<div class="item"><span>${a}</span><span class="amount ${c||''}">${b}</span></div>`;
+  const desde=d?fTs(d):(movs.length?fTs(Math.min(...movs.map(m=>m.ts))):'—');
+  $('resPeriodo').innerHTML=`<div class="sub" style="font-weight:600;margin-bottom:6px">Período actual: ${desde} → hoy</div>`+
+    row('Compras del período (inversión)',fmt(r.inv))+row('Ventas del período ('+r.ventas+')',fmt(r.vend))+row('Cobrado al contado',fmt(r.ventasPag))+
+    row('Pagos recibidos de deudores',fmt(r.pagos))+row('<b>Total ingresado</b>',fmt(r.ingresado),'ok')+row('Costo de lo vendido',fmt(r.costoV))+
+    row('<b>Ganancia del período</b>',fmt(r.ganancia),r.ganancia>=0?'ok':'debt')+
+    '<div class="row"><button class="btn-primary" onclick="cerrarCaja()">🔒 Cerrar caja y generar consolidado</button></div>';
+  $('resAcum').innerHTML='<div class="sub" style="font-weight:600;margin-bottom:6px">Acumulado total (no se reinicia al cerrar caja)</div>'+
+    row('Inversión total (compras)',fmt(t.inv))+row('Total ingresado',fmt(t.ingresado),'ok')+row('Falta recuperar de la inversión',fmt(Math.max(0,t.inv-t.ingresado)),'debt')+
+    row('Ganancia ya cobrada',fmt(Math.max(0,t.ingresado-t.inv)),'ok')+row('<b>Dinero que deberían tener en la cuenta</b>',fmt(cta),cta>=0?'ok':'debt')+
+    row('Les deben (deudores)',fmt(pc),'debt')+row('Cuando cobren todo, tendrían',fmt(cta+pc),'ok');
+  $('resProd').innerHTML=productos.length?productos.map(p=>{const x=r.porP[p.id]||{inv:0,vend:0,costo:0};return `<div class="item"><div><div class="name">${esc(p.nombre)}</div>
+    <div class="sub">Compras ${fmt(x.inv)} · Vendido ${fmt(x.vend)} · Costo de lo vendido ${fmt(x.costo)}</div></div>
+    <div class="amount ${x.vend-x.costo>=0?'ok':'debt'}">${fmt(x.vend-x.costo)}</div></div>`}).join(''):'<div class="empty">Sin productos</div>';
+  const pg=movs.filter(m=>m.tipo==='pago'&&m.ts>d).sort((a,b)=>b.ts-a.ts).slice(0,20);
+  $('resPagos').innerHTML=pg.length?pg.map(m=>`<div class="item"><div><div class="name">${esc(m.cliente)}</div><div class="sub">${esc(m.fecha||'')}${m.por?' · '+esc(m.por):''}</div></div><div class="amount ok">${fmt(m.total)}</div></div>`).join(''):'<div class="empty">Aún no hay pagos</div>';
+  $('resCierres').innerHTML=cierres.length?cierres.map(c=>`<div class="item"><div><div class="name">${esc(c.nombre)}</div>
+    <div class="sub">${esc(c.desdeTxt)} → ${esc(c.hastaTxt)}</div><div class="sub">Ventas ${fmt(c.vend)} (${c.ventas}) · Ingresado ${fmt(c.ingresado)} · Compras ${fmt(c.inv)}</div>
+    <div class="sub">Les debían ${fmt(c.porCobrar)} · En cuenta ${fmt(c.enCuenta)}</div></div><div class="amount ${c.ganancia>=0?'ok':'debt'}">${fmt(c.ganancia)}</div></div>`).join(''):'<div class="empty">Aún no han cerrado ninguna caja</div>';
+}
+async function cerrarCaja(){
+  if(!db)return alert('Sin conexión a la base');
+  const d=T0();
+  if(!movs.some(m=>m.ts>d))return alert('No hay movimientos nuevos desde el último cierre');
+  const nombre=(prompt('Nombre del cierre:',new Date().toLocaleDateString('es-CL',{timeZone:'America/Santiago',month:'long',year:'numeric'}))||'').trim();
+  if(!nombre)return;
+  const hasta=Date.now(),r=calcResumen(d,hasta),desde=d||Math.min(...movs.map(m=>m.ts));
+  if(!confirm('¿Cerrar la caja "'+nombre+'"?\nDesde: '+fTs(desde)+'\nHasta: '+fTs(hasta)+'\nGanancia del período: '+fmt(r.ganancia)))return;
+  const t=calcResumen(0,hasta);delete r.porP;
+  try{await db.collection('cierres').add({...r,nombre,desde,hasta,desdeTxt:fTs(desde),hastaTxt:fTs(hasta),porCobrar:porCobrarTotal(),enCuenta:t.ingresado-t.inv,por:miNombre||''});alert('Caja cerrada. El período nuevo parte en cero.')}
+  catch(e){alert('No se pudo cerrar la caja: '+(e&&e.message||e))}
+}
+async function borrarTodo(){
+  if(!db)return;
+  if(prompt('Esto borra TODAS las ventas, productos, deudas y cierres, y no se puede deshacer.\nDescarga un respaldo antes.\nEscribe BORRAR para confirmar:')!=='BORRAR')return;
+  try{
+    for(const c of ['movs','productos','cierres']){
+      for(let i=0;i<50;i++){const q=await db.collection(c).get();if(q.empty)break;for(const x of q.docs)await db.doc(c+'/'+x.id).delete()}
+    }
+    alert('Registro eliminado. Puedes comenzar de nuevo.');
+  }catch(e){alert('No se pudo borrar todo ('+(e&&e.message||e)+'). Presiona el botón otra vez.')}
+}
+function renderAll(){poblarSelects();renderVentas();renderDeudores();renderProductos();renderResumen()}
+
+/* ---- ARRANQUE ---- */
+try{
+  firebase.initializeApp(FIREBASE_CONFIG);
+  db=firebase.firestore();
+  db.enablePersistence({synchronizeTabs:true}).catch(()=>{}); // permite seguir registrando sin señal
+  startListeners();
+}catch(e){$('banner').textContent='Error al iniciar Firebase: '+(e&&e.message||e);$('banner').classList.remove('hidden')}
+cargarNombre();
+renderAll();
+</script>
+</body>
+</html>
